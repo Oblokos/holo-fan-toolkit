@@ -166,7 +166,24 @@ svg {
   background-size: 32px 32px;
 }
 
+.media-preview {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: none;
+  max-width: none;
+  clip-path: circle(50% at 50% 50%);
+  transform-origin: center;
+  will-change: transform;
+}
+
+.canvas-frame.video-active .media-preview {
+  display: block;
+}
+
 canvas {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
@@ -241,10 +258,6 @@ select {
 
 .status.error {
   color: var(--danger);
-}
-
-#videoSource {
-  display: none;
 }
 
 @media (max-width: 1040px) {

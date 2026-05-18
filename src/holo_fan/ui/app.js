@@ -11,6 +11,7 @@ const controls = {
   sourceCanvas: document.querySelector("#sourceCanvas"),
   sampleCanvas: document.querySelector("#sampleCanvas"),
   video: document.querySelector("#videoSource"),
+  sourceFrame: document.querySelector("#sourceCanvas").parentElement,
   sourceMeta: document.querySelector("#sourceMeta"),
   status: document.querySelector("#status"),
   zoom: document.querySelector("#zoom"),
@@ -66,6 +67,10 @@ function clearCanvas(ctx) {
   ctx.fillRect(0, 0, 640, 640);
 }
 
+function clearTransparent(ctx) {
+  ctx.clearRect(0, 0, 640, 640);
+}
+
 function drawDiscGuides(ctx) {
   ctx.save();
   ctx.translate(320, 320);
@@ -104,7 +109,12 @@ function currentMediaElement() {
 function drawSource() {
   const media = currentMediaElement();
   clearCanvas(hiddenContext);
-  clearCanvas(sourceContext);
+  if (state.mediaKind === "video") {
+    clearTransparent(sourceContext);
+  } else {
+    clearCanvas(sourceContext);
+  }
+  controls.sourceFrame.classList.toggle("video-active", state.mediaKind === "video" && Boolean(media));
 
   if (!media) {
     drawDiscGuides(sourceContext);
@@ -120,19 +130,31 @@ function drawSource() {
   const drawWidth = width * scale;
   const drawHeight = height * scale;
 
-  hiddenContext.save();
-  hiddenContext.translate(320 + v.offsetX, 320 + v.offsetY);
-  hiddenContext.rotate((v.rotation * Math.PI) / 180);
-  hiddenContext.drawImage(media, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-  hiddenContext.restore();
+  if (state.mediaKind === "video") {
+    controls.video.style.width = `${drawWidth}px`;
+    controls.video.style.height = `${drawHeight}px`;
+    controls.video.style.transform = `translate(calc(-50% + ${v.offsetX}px), calc(-50% + ${v.offsetY}px)) rotate(${v.rotation}deg)`;
+  }
 
-  sourceContext.drawImage(hiddenCanvas, 0, 0);
-  sourceContext.save();
-  sourceContext.globalCompositeOperation = "destination-in";
-  sourceContext.beginPath();
-  sourceContext.arc(320, 320, 282, 0, Math.PI * 2);
-  sourceContext.fill();
-  sourceContext.restore();
+  try {
+    hiddenContext.save();
+    hiddenContext.translate(320 + v.offsetX, 320 + v.offsetY);
+    hiddenContext.rotate((v.rotation * Math.PI) / 180);
+    hiddenContext.drawImage(media, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    hiddenContext.restore();
+  } catch (error) {
+    setStatus(`Preview frame is not drawable yet: ${error.message}`, true);
+  }
+
+  if (state.mediaKind === "image") {
+    sourceContext.drawImage(hiddenCanvas, 0, 0);
+    sourceContext.save();
+    sourceContext.globalCompositeOperation = "destination-in";
+    sourceContext.beginPath();
+    sourceContext.arc(320, 320, 282, 0, Math.PI * 2);
+    sourceContext.fill();
+    sourceContext.restore();
+  }
   drawDiscGuides(sourceContext);
   drawSample();
 }
@@ -189,6 +211,7 @@ async function loadFile(file) {
 
   if (state.mediaKind === "video") {
     state.image = null;
+    controls.video.removeAttribute("src");
     controls.video.onloadedmetadata = () => {
       controls.start.max = Math.max(0, Math.floor(controls.video.duration || 60));
       controls.video.currentTime = Math.min(values().start, controls.video.duration || values().start);
@@ -198,10 +221,15 @@ async function loadFile(file) {
       setStatus("Video ready. Adjust the frame and export.");
       drawSource();
     };
+    controls.video.onerror = () => {
+      const code = controls.video.error ? controls.video.error.code : "unknown";
+      setStatus(`Browser could not decode this video for preview (${code}). Export may still work through ffmpeg.`, true);
+    };
     controls.video.src = state.url;
     controls.video.load();
   } else {
     controls.video.removeAttribute("src");
+    controls.sourceFrame.classList.remove("video-active");
     const image = new Image();
     image.onload = () => {
       state.image = image;

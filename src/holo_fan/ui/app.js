@@ -2,6 +2,10 @@ const state = {
   file: null,
   mediaKind: "image",
   image: null,
+  previewImage: null,
+  previewUrl: null,
+  previewRequest: 0,
+  previewTimer: null,
   url: null,
 };
 
@@ -101,7 +105,10 @@ function drawDiscGuides(ctx) {
 
 function currentMediaElement() {
   if (state.mediaKind === "video") {
-    return controls.video.readyState >= 2 ? controls.video : null;
+    if (controls.video.readyState >= 2) {
+      return controls.video;
+    }
+    return state.previewImage;
   }
   return state.image;
 }
@@ -109,12 +116,14 @@ function currentMediaElement() {
 function drawSource() {
   const media = currentMediaElement();
   clearCanvas(hiddenContext);
-  if (state.mediaKind === "video") {
+  const usingBrowserVideo = state.mediaKind === "video" && media === controls.video;
+  const usingSnapshot = state.mediaKind === "video" && media === state.previewImage;
+  if (usingBrowserVideo) {
     clearTransparent(sourceContext);
   } else {
     clearCanvas(sourceContext);
   }
-  controls.sourceFrame.classList.toggle("video-active", state.mediaKind === "video" && Boolean(media));
+  controls.sourceFrame.classList.toggle("video-active", usingBrowserVideo);
 
   if (!media) {
     drawDiscGuides(sourceContext);
@@ -130,7 +139,7 @@ function drawSource() {
   const drawWidth = width * scale;
   const drawHeight = height * scale;
 
-  if (state.mediaKind === "video") {
+  if (usingBrowserVideo) {
     controls.video.style.width = `${drawWidth}px`;
     controls.video.style.height = `${drawHeight}px`;
     controls.video.style.transform = `translate(calc(-50% + ${v.offsetX}px), calc(-50% + ${v.offsetY}px)) rotate(${v.rotation}deg)`;
@@ -146,7 +155,7 @@ function drawSource() {
     setStatus(`Preview frame is not drawable yet: ${error.message}`, true);
   }
 
-  if (state.mediaKind === "image") {
+  if (state.mediaKind === "image" || usingSnapshot) {
     sourceContext.drawImage(hiddenCanvas, 0, 0);
     sourceContext.save();
     sourceContext.globalCompositeOperation = "destination-in";
@@ -199,10 +208,74 @@ function setStatus(text, isError = false) {
   controls.status.classList.toggle("error", isError);
 }
 
+function clearPreviewImage() {
+  if (state.previewUrl) {
+    URL.revokeObjectURL(state.previewUrl);
+  }
+  state.previewImage = null;
+  state.previewUrl = null;
+}
+
+function schedulePreviewFrame() {
+  if (state.mediaKind !== "video" || !state.file) {
+    return;
+  }
+  clearTimeout(state.previewTimer);
+  state.previewTimer = setTimeout(requestPreviewFrame, 180);
+}
+
+async function requestPreviewFrame() {
+  if (state.mediaKind !== "video" || !state.file) {
+    return;
+  }
+
+  const requestId = state.previewRequest + 1;
+  state.previewRequest = requestId;
+
+  const form = new FormData();
+  form.append("media", state.file);
+  form.append("start", values().start);
+
+  setStatus("Generating ffmpeg preview frame...");
+  try {
+    const response = await fetch("/api/preview-frame", { method: "POST", body: form });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Preview failed" }));
+      throw new Error(error.error || "Preview failed");
+    }
+    const blob = await response.blob();
+    if (requestId !== state.previewRequest) {
+      return;
+    }
+    const image = new Image();
+    const url = URL.createObjectURL(blob);
+    image.onload = () => {
+      if (requestId !== state.previewRequest) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      clearPreviewImage();
+      state.previewImage = image;
+      state.previewUrl = url;
+      controls.exportButton.disabled = false;
+      setStatus("Using ffmpeg snapshot preview. Export will use the full video.");
+      drawSource();
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      throw new Error("Could not load generated preview image");
+    };
+    image.src = url;
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
 async function loadFile(file) {
   if (state.url) {
     URL.revokeObjectURL(state.url);
   }
+  clearPreviewImage();
   state.file = file;
   state.url = URL.createObjectURL(file);
   state.mediaKind = file.type.startsWith("video/") ? "video" : "image";
@@ -222,11 +295,11 @@ async function loadFile(file) {
       drawSource();
     };
     controls.video.onerror = () => {
-      const code = controls.video.error ? controls.video.error.code : "unknown";
-      setStatus(`Browser could not decode this video for preview (${code}). Export may still work through ffmpeg.`, true);
+      schedulePreviewFrame();
     };
     controls.video.src = state.url;
     controls.video.load();
+    schedulePreviewFrame();
   } else {
     controls.video.removeAttribute("src");
     controls.sourceFrame.classList.remove("video-active");
@@ -302,6 +375,9 @@ controls.start.addEventListener("input", () => {
   syncLabels();
   if (state.mediaKind === "video" && Number.isFinite(controls.video.duration)) {
     controls.video.currentTime = Math.min(Number(controls.start.value), controls.video.duration);
+  }
+  if (state.mediaKind === "video") {
+    schedulePreviewFrame();
   }
   drawSource();
 });

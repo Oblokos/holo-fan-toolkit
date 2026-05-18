@@ -40,6 +40,9 @@ const outputs = {
   duration: document.querySelector("#durationValue"),
 };
 
+const IMAGE_DURATION_DEFAULT = 6;
+const IMAGE_DURATION_MAX = 30;
+
 const sourceContext = controls.sourceCanvas.getContext("2d", { willReadFrequently: true });
 const sampleContext = controls.sampleCanvas.getContext("2d");
 const hiddenCanvas = document.createElement("canvas");
@@ -212,6 +215,40 @@ function setStatus(text, isError = false) {
   controls.status.classList.toggle("error", isError);
 }
 
+function resetImageTimingControls() {
+  controls.duration.max = IMAGE_DURATION_MAX;
+  controls.duration.value = IMAGE_DURATION_DEFAULT;
+  syncLabels();
+}
+
+function applyVideoDuration(duration) {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return;
+  }
+  const maxDuration = Math.max(0.5, duration);
+  controls.duration.max = maxDuration.toFixed(1);
+  controls.duration.value = Math.min(Number(controls.duration.value), maxDuration).toFixed(1);
+  controls.start.max = Math.max(0, Math.floor(duration));
+  controls.start.value = Math.min(Number(controls.start.value), Math.max(0, duration - 0.1)).toFixed(1);
+  syncLabels();
+}
+
+async function requestMediaInfo() {
+  if (state.mediaKind !== "video" || !state.file) {
+    return;
+  }
+
+  const form = new FormData();
+  form.append("media", state.file);
+  const response = await fetch("/api/media-info", { method: "POST", body: form });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: "Could not read video duration" }));
+    throw new Error(error.error || "Could not read video duration");
+  }
+  const info = await response.json();
+  applyVideoDuration(Number(info.duration));
+}
+
 function clearPreviewImage() {
   if (state.previewUrl) {
     URL.revokeObjectURL(state.previewUrl);
@@ -368,13 +405,16 @@ async function loadFile(file) {
 
   if (state.mediaKind === "video") {
     state.image = null;
+    requestMediaInfo().catch((error) => {
+      setStatus(error.message, true);
+    });
     controls.video.removeAttribute("src");
     controls.video.loop = false;
     controls.video.onloadedmetadata = () => {
       if (state.usingGeneratedPreview) {
         controls.video.currentTime = 0;
       } else {
-        controls.start.max = Math.max(0, Math.floor(controls.video.duration || 60));
+        applyVideoDuration(controls.video.duration);
         controls.video.currentTime = Math.min(values().start, controls.video.duration || values().start);
       }
     };
@@ -397,6 +437,7 @@ async function loadFile(file) {
     controls.video.removeAttribute("src");
     controls.video.loop = false;
     controls.sourceFrame.classList.remove("video-active");
+    resetImageTimingControls();
     const image = new Image();
     image.onload = () => {
       state.image = image;

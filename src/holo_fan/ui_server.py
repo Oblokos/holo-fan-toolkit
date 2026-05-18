@@ -74,6 +74,15 @@ class HoloFanUIHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/media-info":
+            try:
+                payload = self._media_info()
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(payload)
+            return
+
         if parsed.path == "/api/preview-video":
             try:
                 data = self._preview_video()
@@ -241,6 +250,42 @@ class HoloFanUIHandler(BaseHTTPRequestHandler):
                 raise RuntimeError(f"ffmpeg preview failed:\n{stderr}") from exc
 
             return frame_path.read_bytes()
+
+    def _media_info(self):
+        _, files = self._parse_multipart()
+        media = files.get("media")
+        if media is None or not media["filename"]:
+            raise ValueError("No media file was uploaded")
+
+        source_name = Path(media["filename"]).name
+        suffix = Path(source_name).suffix or ".media"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            media_path = Path(tmp) / f"input{suffix}"
+            media_path.write_bytes(media["content"])
+            args = [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "json",
+                str(media_path),
+            ]
+            try:
+                result = subprocess.run(args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except FileNotFoundError as exc:
+                raise RuntimeError("ffprobe is required for video metadata") from exc
+            except subprocess.CalledProcessError as exc:
+                stderr = exc.stderr.decode(errors="replace")
+                raise RuntimeError(f"ffprobe failed:\n{stderr}") from exc
+
+        metadata = json.loads(result.stdout.decode())
+        duration = float(metadata.get("format", {}).get("duration") or 0)
+        if duration <= 0:
+            raise ValueError("Could not read video duration")
+        return {"duration": duration}
 
     def _preview_video(self):
         form, files = self._parse_multipart()

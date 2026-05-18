@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "holo-fan-toolkit"
+version = "0.1.0"
+description = "Encoder tools for 48 LED / 300 line holographic fan BIN files."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "Pillow>=10",
+]
+
+[project.scripts]
+holo-fan = "holo_fan.cli:main"
+
+[tool.setuptools.package-data]
+holo_fan = ["data/*.hex"]

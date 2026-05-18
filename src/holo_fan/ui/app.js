@@ -408,9 +408,59 @@ async function loadFile(file) {
   }
 }
 
+function suggestedBinName() {
+  if (!state.file) {
+    return "holo-fan-export.bin";
+  }
+  return `${state.file.name.replace(/\.[^.]+$/, "")}.bin`;
+}
+
+async function chooseSaveHandle() {
+  if (!window.showSaveFilePicker) {
+    return null;
+  }
+  return window.showSaveFilePicker({
+    suggestedName: suggestedBinName(),
+    types: [
+      {
+        description: "Holo fan BIN",
+        accept: { "application/octet-stream": [".bin"] },
+      },
+    ],
+  });
+}
+
+async function saveBlob(blob, saveHandle) {
+  if (saveHandle) {
+    const writable = await saveHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return saveHandle.name;
+  }
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = suggestedBinName();
+  link.click();
+  URL.revokeObjectURL(url);
+  return link.download;
+}
+
 async function exportBin() {
   if (!state.file) {
     return;
+  }
+
+  let saveHandle = null;
+  try {
+    saveHandle = await chooseSaveHandle();
+  } catch (error) {
+    if (error.name === "AbortError") {
+      setStatus("Export canceled.");
+      return;
+    }
+    setStatus(`Save dialog unavailable: ${error.message}. Using browser download.`, true);
   }
 
   const v = values();
@@ -437,13 +487,8 @@ async function exportBin() {
       throw new Error(error.error || "Export failed");
     }
     const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${state.file.name.replace(/\.[^.]+$/, "")}.bin`;
-    link.click();
-    URL.revokeObjectURL(url);
-    setStatus(`Exported ${(blob.size / 1024).toFixed(1)} KB BIN.`);
+    const filename = await saveBlob(blob, saveHandle);
+    setStatus(`Exported ${filename} (${(blob.size / 1024).toFixed(1)} KB).`);
   } catch (error) {
     setStatus(error.message, true);
   } finally {

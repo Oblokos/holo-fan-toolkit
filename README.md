@@ -12,11 +12,12 @@ This repo is the clean implementation extracted from the reverse engineering wor
 - PCM u8 mono audio at 32000 Hz
 - Manual zoom and offset for fitting content into the fan disc
 - 180 degree rotation when needed
+- Local visual UI with fan-disc preview and sampled output preview
 
 ## Requirements
 
 - Python 3.10+
-- ffmpeg available on `PATH` for video input
+- ffmpeg and ffprobe available on `PATH` for video input and UI video preview
 
 Install for development:
 
@@ -67,6 +68,14 @@ holo-fan serve-ui
 
 Then open `http://127.0.0.1:8765`. The editor loads image/video media, previews a circular fan-disc mask, lets you tune zoom, offset, rotation, start, and duration, then exports through the same Python encoder used by the CLI.
 
+UI video notes:
+
+- The browser tries to preview the original video first.
+- If Chrome cannot decode the file, the UI asks ffmpeg to generate a short H.264 preview clip for smooth animated preview.
+- The duration slider is clamped to the loaded video duration using ffprobe metadata.
+- Images keep the free duration control used for repeated still-frame output.
+- Export uses a browser save dialog when available, with automatic download as a fallback.
+
 ## Current Device Profile
 
 ```text
@@ -78,7 +87,3 @@ audio = pcm_u8 mono 32000 Hz
 ```
 
 The encoder uses the official 5D HoLo header and LUT captured during reverse engineering.
-
-## UI Plan
-
-The `ui/` directory is reserved for the next phase: a visual tool that loads a video, shows a circular fan preview mask, and lets the user adjust scale, offset, rotation, and duration before exporting.

@@ -19,9 +19,13 @@
 - [x] Manual zoom, offset, rotation, start, and duration.
 - [x] Preview sampled output.
 - [x] Export through the same Python encoder.
+- [x] Generate browser-compatible animated video previews with ffmpeg fallback.
+- [x] Clamp video timing controls from ffprobe metadata.
+- [x] Use native save dialog for BIN export when the browser supports it.
 - [ ] Add packaged desktop app instructions.
 - [ ] Add richer video playback controls.
 - [ ] Add export progress for long videos.
+- [ ] Cache generated preview clips while tuning fit controls.
 
 ## Phase 3: Public Repo
 

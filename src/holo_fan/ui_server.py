@@ -74,6 +74,21 @@ class HoloFanUIHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/preview-video":
+            try:
+                data = self._preview_video()
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
         if parsed.path == "/api/preview-frame":
             try:
                 data = self._preview_frame()
@@ -226,6 +241,56 @@ class HoloFanUIHandler(BaseHTTPRequestHandler):
                 raise RuntimeError(f"ffmpeg preview failed:\n{stderr}") from exc
 
             return frame_path.read_bytes()
+
+    def _preview_video(self):
+        form, files = self._parse_multipart()
+        media = files.get("media")
+        if media is None or not media["filename"]:
+            raise ValueError("No media file was uploaded")
+
+        source_name = Path(media["filename"]).name
+        suffix = Path(source_name).suffix or ".media"
+        start = max(0.0, _field_float(form, "start", 0.0))
+        duration = min(12.0, max(0.5, _field_float(form, "duration", 6.0)))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            media_path = tmp_dir / f"input{suffix}"
+            preview_path = tmp_dir / "preview.mp4"
+            media_path.write_bytes(media["content"])
+
+            args = ["ffmpeg", "-y"]
+            if start:
+                args.extend(["-ss", str(start)])
+            args.extend([
+                "-i",
+                str(media_path),
+                "-t",
+                str(duration),
+                "-vf",
+                "scale=640:640:force_original_aspect_ratio=decrease:flags=lanczos,pad=640:640:(ow-iw)/2:(oh-ih)/2:black,fps=20",
+                "-an",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "24",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                str(preview_path),
+            ])
+            try:
+                subprocess.run(args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except FileNotFoundError as exc:
+                raise RuntimeError("ffmpeg is required for animated video preview") from exc
+            except subprocess.CalledProcessError as exc:
+                stderr = exc.stderr.decode(errors="replace")
+                raise RuntimeError(f"ffmpeg animated preview failed:\n{stderr}") from exc
+
+            return preview_path.read_bytes()
 
     def _parse_multipart(self):
         content_type = self.headers.get("Content-Type", "")

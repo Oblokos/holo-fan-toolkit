@@ -4,8 +4,12 @@ const state = {
   image: null,
   previewImage: null,
   previewUrl: null,
+  previewVideoUrl: null,
   previewRequest: 0,
   previewTimer: null,
+  renderFrame: null,
+  usingGeneratedPreview: false,
+  loadingGeneratedPreview: false,
   url: null,
 };
 
@@ -216,12 +220,90 @@ function clearPreviewImage() {
   state.previewUrl = null;
 }
 
+function clearPreviewVideo() {
+  if (state.previewVideoUrl) {
+    URL.revokeObjectURL(state.previewVideoUrl);
+  }
+  state.previewVideoUrl = null;
+  state.usingGeneratedPreview = false;
+  state.loadingGeneratedPreview = false;
+}
+
+function stopRenderLoop() {
+  if (state.renderFrame) {
+    cancelAnimationFrame(state.renderFrame);
+  }
+  state.renderFrame = null;
+}
+
+function startRenderLoop() {
+  if (state.renderFrame) {
+    return;
+  }
+  const render = () => {
+    state.renderFrame = null;
+    if (state.mediaKind === "video" && controls.video.readyState >= 2 && !controls.video.paused) {
+      drawSource();
+      state.renderFrame = requestAnimationFrame(render);
+    }
+  };
+  state.renderFrame = requestAnimationFrame(render);
+}
+
+function schedulePreviewVideo() {
+  if (state.mediaKind !== "video" || !state.file) {
+    return;
+  }
+  clearTimeout(state.previewTimer);
+  state.previewTimer = setTimeout(requestPreviewVideo, 180);
+}
+
 function schedulePreviewFrame() {
   if (state.mediaKind !== "video" || !state.file) {
     return;
   }
   clearTimeout(state.previewTimer);
   state.previewTimer = setTimeout(requestPreviewFrame, 180);
+}
+
+async function requestPreviewVideo() {
+  if (state.mediaKind !== "video" || !state.file) {
+    return;
+  }
+
+  const requestId = state.previewRequest + 1;
+  state.previewRequest = requestId;
+  state.loadingGeneratedPreview = true;
+
+  const form = new FormData();
+  form.append("media", state.file);
+  form.append("start", values().start);
+  form.append("duration", values().duration);
+
+  setStatus("Generating animated ffmpeg preview...");
+  try {
+    const response = await fetch("/api/preview-video", { method: "POST", body: form });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Animated preview failed" }));
+      throw new Error(error.error || "Animated preview failed");
+    }
+    const blob = await response.blob();
+    if (requestId !== state.previewRequest) {
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    clearPreviewVideo();
+    state.previewVideoUrl = url;
+    state.usingGeneratedPreview = true;
+    state.loadingGeneratedPreview = false;
+    controls.video.src = url;
+    controls.video.loop = true;
+    controls.video.load();
+  } catch (error) {
+    state.loadingGeneratedPreview = false;
+    setStatus(`${error.message}. Falling back to a still frame.`, true);
+    schedulePreviewFrame();
+  }
 }
 
 async function requestPreviewFrame() {
@@ -276,6 +358,8 @@ async function loadFile(file) {
     URL.revokeObjectURL(state.url);
   }
   clearPreviewImage();
+  clearPreviewVideo();
+  stopRenderLoop();
   state.file = file;
   state.url = URL.createObjectURL(file);
   state.mediaKind = file.type.startsWith("video/") ? "video" : "image";
@@ -285,23 +369,33 @@ async function loadFile(file) {
   if (state.mediaKind === "video") {
     state.image = null;
     controls.video.removeAttribute("src");
+    controls.video.loop = false;
     controls.video.onloadedmetadata = () => {
-      controls.start.max = Math.max(0, Math.floor(controls.video.duration || 60));
-      controls.video.currentTime = Math.min(values().start, controls.video.duration || values().start);
+      if (state.usingGeneratedPreview) {
+        controls.video.currentTime = 0;
+      } else {
+        controls.start.max = Math.max(0, Math.floor(controls.video.duration || 60));
+        controls.video.currentTime = Math.min(values().start, controls.video.duration || values().start);
+      }
     };
     controls.video.onloadeddata = () => {
       controls.exportButton.disabled = false;
-      setStatus("Video ready. Adjust the frame and export.");
+      setStatus(state.usingGeneratedPreview ? "Using animated ffmpeg preview. Export will use the full video." : "Video ready. Adjust the frame and export.");
       drawSource();
+      controls.video.play().catch(() => {});
     };
     controls.video.onerror = () => {
-      schedulePreviewFrame();
+      if (state.usingGeneratedPreview || state.loadingGeneratedPreview) {
+        schedulePreviewFrame();
+      } else {
+        schedulePreviewVideo();
+      }
     };
     controls.video.src = state.url;
     controls.video.load();
-    schedulePreviewFrame();
   } else {
     controls.video.removeAttribute("src");
+    controls.video.loop = false;
     controls.sourceFrame.classList.remove("video-active");
     const image = new Image();
     image.onload = () => {
@@ -367,23 +461,29 @@ controls.mediaInput.addEventListener("change", (event) => {
 for (const input of [controls.zoom, controls.offsetX, controls.offsetY, controls.rotation, controls.duration, controls.padding]) {
   input.addEventListener("input", () => {
     syncLabels();
+    if (input === controls.duration && state.mediaKind === "video" && state.usingGeneratedPreview) {
+      schedulePreviewVideo();
+    }
     drawSource();
   });
 }
 
 controls.start.addEventListener("input", () => {
   syncLabels();
-  if (state.mediaKind === "video" && Number.isFinite(controls.video.duration)) {
+  if (state.mediaKind === "video" && Number.isFinite(controls.video.duration) && !state.usingGeneratedPreview) {
     controls.video.currentTime = Math.min(Number(controls.start.value), controls.video.duration);
   }
-  if (state.mediaKind === "video") {
-    schedulePreviewFrame();
+  if (state.mediaKind === "video" && state.usingGeneratedPreview) {
+    schedulePreviewVideo();
   }
   drawSource();
 });
 
 controls.video.addEventListener("seeked", drawSource);
 controls.video.addEventListener("loadeddata", drawSource);
+controls.video.addEventListener("play", startRenderLoop);
+controls.video.addEventListener("pause", stopRenderLoop);
+controls.video.addEventListener("ended", stopRenderLoop);
 controls.exportButton.addEventListener("click", exportBin);
 
 syncLabels();

@@ -14,11 +14,14 @@
 
 ## Phase 2: Visual UI
 
-- [ ] Load image/video.
-- [ ] Show circular fan-disc mask.
-- [ ] Manual zoom, offset, rotation, start, and duration.
-- [ ] Preview sampled output.
-- [ ] Export through the same Python encoder.
+- [x] Load image/video.
+- [x] Show circular fan-disc mask.
+- [x] Manual zoom, offset, rotation, start, and duration.
+- [x] Preview sampled output.
+- [x] Export through the same Python encoder.
+- [ ] Add packaged desktop app instructions.
+- [ ] Add richer video playback controls.
+- [ ] Add export progress for long videos.
 
 ## Phase 3: Public Repo
 

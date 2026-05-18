@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Holo Fan Toolkit</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace" aria-label="Preview workspace">
+        <header class="topbar">
+          <div>
+            <h1>Holo Fan Toolkit</h1>
+            <p>Fit media to a 48 LED / 300 line fan disc and export a device-ready BIN.</p>
+          </div>
+          <button class="primary-button" id="exportButton" type="button" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+            Export BIN
+          </button>
+        </header>
+
+        <div class="preview-grid">
+          <section class="preview-panel">
+            <div class="panel-head">
+              <h2>Fan disc</h2>
+              <span id="sourceMeta">No media loaded</span>
+            </div>
+            <div class="canvas-frame">
+              <canvas id="sourceCanvas" width="640" height="640"></canvas>
+            </div>
+          </section>
+
+          <section class="preview-panel compact">
+            <div class="panel-head">
+              <h2>Sampled output</h2>
+              <span>300 radial lines</span>
+            </div>
+            <div class="canvas-frame">
+              <canvas id="sampleCanvas" width="640" height="640"></canvas>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <aside class="control-rail" aria-label="Editor controls">
+        <label class="file-drop" for="mediaInput">
+          <input id="mediaInput" type="file" accept="image/*,video/*" />
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m7-7H5"/></svg>
+          <span>Load image or video</span>
+        </label>
+
+        <div class="control-group">
+          <h2>Fit</h2>
+          <label>
+            <span>Zoom</span>
+            <output id="zoomValue">1.00x</output>
+            <input id="zoom" type="range" min="0.35" max="4" step="0.01" value="1" />
+          </label>
+          <label>
+            <span>Offset X</span>
+            <output id="offsetXValue">0</output>
+            <input id="offsetX" type="range" min="-180" max="180" step="1" value="0" />
+          </label>
+          <label>
+            <span>Offset Y</span>
+            <output id="offsetYValue">0</output>
+            <input id="offsetY" type="range" min="-180" max="180" step="1" value="0" />
+          </label>
+          <label>
+            <span>Rotation</span>
+            <output id="rotationValue">0 deg</output>
+            <input id="rotation" type="range" min="0" max="360" step="1" value="0" />
+          </label>
+        </div>
+
+        <div class="control-group">
+          <h2>Timing</h2>
+          <label>
+            <span>Start</span>
+            <output id="startValue">0.0s</output>
+            <input id="start" type="range" min="0" max="60" step="0.1" value="0" />
+          </label>
+          <label>
+            <span>Duration</span>
+            <output id="durationValue">6.0s</output>
+            <input id="duration" type="range" min="0.5" max="30" step="0.1" value="6" />
+          </label>
+        </div>
+
+        <div class="control-group">
+          <h2>Export</h2>
+          <label class="select-label">
+            <span>Padding</span>
+            <select id="padding">
+              <option value="official">Official multiple</option>
+              <option value="factory">Factory tail</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          <p class="status" id="status">Choose a file to begin.</p>
+        </div>
+      </aside>
+    </main>
+
+    <video id="videoSource" muted playsinline></video>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

@@ -53,7 +53,19 @@ Useful fit options:
 --offset-x 8      move crop window horizontally
 --offset-y -4     move crop window vertically
 --frames 120      limit output to 120 frames / 6 seconds
+--start 2.5       begin video input at 2.5 seconds
+--duration 6      encode 6 seconds
 ```
+
+## Visual UI
+
+Run the local browser editor:
+
+```bash
+holo-fan serve-ui
+```
+
+Then open `http://127.0.0.1:8765`. The editor loads image/video media, previews a circular fan-disc mask, lets you tune zoom, offset, rotation, start, and duration, then exports through the same Python encoder used by the CLI.
 
 ## Current Device Profile
 

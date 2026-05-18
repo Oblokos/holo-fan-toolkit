@@ -1,8 +1,14 @@
-# UI Plan
+# UI
 
-This directory is reserved for the visual editor.
+The visual editor is implemented as package assets under `src/holo_fan/ui` and is served by the Python CLI:
 
-Planned workflow:
+```bash
+holo-fan serve-ui
+```
+
+Open `http://127.0.0.1:8765` after the server starts.
+
+Current workflow:
 
 1. Load an image or video.
 2. Show a circular fan disc overlay.

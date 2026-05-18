@@ -17,3 +17,4 @@ holo-fan = "holo_fan.cli:main"
 
 [tool.setuptools.package-data]
 holo_fan = ["data/*.hex"]
+"holo_fan.ui" = ["*.html", "*.css", "*.js"]

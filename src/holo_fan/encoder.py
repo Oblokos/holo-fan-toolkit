@@ -13,6 +13,7 @@ FUN_14000cb40:
 import argparse
 import math
 import subprocess
+import sys
 import tempfile
 from importlib.resources import files
 from pathlib import Path
@@ -349,7 +350,18 @@ def run_ffmpeg(args_list):
         raise RuntimeError(f"ffmpeg failed:\n{stderr}") from exc
 
 
-def load_video_inputs(video_path, width, height, fit_mode, rotate_degrees=0, fit_scale=1.0, offset_x=0, offset_y=0):
+def load_video_inputs(
+    video_path,
+    width,
+    height,
+    fit_mode,
+    rotate_degrees=0,
+    fit_scale=1.0,
+    offset_x=0,
+    offset_y=0,
+    start_time=0,
+    duration=None,
+):
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         raw_video = tmp_dir / "video.bgr"
@@ -366,11 +378,15 @@ def load_video_inputs(video_path, width, height, fit_mode, rotate_degrees=0, fit
             else:
                 raise ValueError("--rotate for video currently supports 0, 90, 180, 270")
 
+        input_args = ["ffmpeg", "-y"]
+        if start_time:
+            input_args.extend(["-ss", str(start_time)])
+        input_args.extend(["-i", str(video_path)])
+        if duration is not None:
+            input_args.extend(["-t", str(duration)])
+
         run_ffmpeg([
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(video_path),
+            *input_args,
             "-vf",
             vf,
             "-pix_fmt",
@@ -381,10 +397,7 @@ def load_video_inputs(video_path, width, height, fit_mode, rotate_degrees=0, fit
         ])
         try:
             run_ffmpeg([
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(video_path),
+                *input_args,
                 "-vn",
                 "-c:a",
                 "pcm_u8",
@@ -450,6 +463,8 @@ def build_bin(args):
             args.fit_scale,
             args.offset_x,
             args.offset_y,
+            getattr(args, "start", 0) or 0,
+            getattr(args, "duration", None),
         )
         if args.frames is not None:
             video_frames = video_frames[: args.frames]
@@ -458,7 +473,10 @@ def build_bin(args):
         center_x = input_width / 2 - 0.5
         center_y = input_height / 2 - 0.5
     else:
-        frame_count = args.frames if args.frames is not None else 120
+        default_frames = 120
+        if getattr(args, "duration", None) is not None:
+            default_frames = max(1, round(args.duration * 20))
+        frame_count = args.frames if args.frames is not None else default_frames
         audio_chunks = read_audio_chunks(args.audio, frame_count)
         video_frames = None
         input_width = args.width
@@ -515,8 +533,9 @@ def build_bin(args):
     return bytes(output)
 
 
-def main():
+def _build_parser():
     parser = argparse.ArgumentParser(description="Encode .bin files using the decompiled 5D HoLo algorithm")
+    parser.add_argument("command", nargs="?", choices=["encode"], help="optional command; default is encode")
     parser.add_argument("--output", "-o", type=Path, required=True)
     parser.add_argument("--image", type=Path, help="single image to encode repeatedly")
     parser.add_argument("--video", type=Path, help="video to encode at 20 fps with PCM u8 32000Hz audio")
@@ -526,6 +545,8 @@ def main():
     parser.add_argument("--offset-x", type=float, default=0, help="horizontal fit offset in sampled pixels")
     parser.add_argument("--offset-y", type=float, default=0, help="vertical fit offset in sampled pixels")
     parser.add_argument("--rotate", type=float, default=0, help="clockwise image rotation before encoding")
+    parser.add_argument("--start", type=float, default=0, help="video start time in seconds")
+    parser.add_argument("--duration", type=float, help="duration in seconds; maps to frames for image input")
     parser.add_argument(
         "--pattern",
         choices=[
@@ -552,12 +573,21 @@ def main():
     parser.add_argument("--min-brightness", type=float)
     parser.add_argument("--change-brightness-lights", type=int, default=0)
     parser.add_argument("--brightness", type=float, nargs="*", help="per-radius brightness values, center outward")
-    args = parser.parse_args()
+    return parser
+
+
+def encode_from_cli(argv=None):
+    parser = _build_parser()
+    args = parser.parse_args(argv)
 
     if args.frames is not None and args.frames < 1:
         raise ValueError("--frames must be positive")
     if args.fit_scale <= 0:
         raise ValueError("--fit-scale must be positive")
+    if args.start < 0:
+        raise ValueError("--start must be zero or greater")
+    if args.duration is not None and args.duration <= 0:
+        raise ValueError("--duration must be positive")
     if args.header == "file" and not args.header_file:
         raise ValueError("--header-file is required when --header=file")
     if args.image and args.video:
@@ -570,6 +600,18 @@ def main():
     print(f"Header: {len(OFFICIAL_HEADER) if args.header == 'official' else args.header_file.stat().st_size} bytes")
     print(f"Payload: {build_bin.frame_count} * {BLOCK_SIZE} bytes ({build_bin.frame_count / 20:.2f}s @ 20 fps)")
     print(f"Padding: {args.padding}")
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "serve-ui":
+        from .ui_server import main as serve_ui
+
+        serve_ui(argv[1:])
+        return
+    if argv and argv[0] == "encode":
+        argv = argv[1:]
+    encode_from_cli(argv)
 
 
 if __name__ == "__main__":
